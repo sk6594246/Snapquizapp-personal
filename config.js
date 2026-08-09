@@ -14,7 +14,7 @@ const APP_LINKS = {
 // you replace them with your real IDs — so it's safe to ship as-is with no console errors or blank ad boxes.
 const ADSENSE_CONFIG = {
   // From AdSense > Account > Account information.
-  publisherId: 'ca-pub-1474607999701705',
+  publisherId: 'ca-pub-xxxxxxxxxxxxxxxx',
 
   // One ad slot ID per placement, from AdSense > Ads > By ad unit. Ads only show on Parent Hub
   // screens (Overview, History) — never on the child-facing quiz screens.
