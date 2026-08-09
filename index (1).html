@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#2563eb">
+<title>SnapQuiz App</title>
+<link rel="manifest" href="./manifest.json">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+<script src="./config.js"></script>
+<!-- Vercel Web Analytics -->
+<script>
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+</script>
+<script defer src="/_vercel/insights/script.js"></script>
+<!-- AdSense-verification snippet: kept static/verbatim (not JS-injected) so Google's crawler can find it without executing app JS. Publisher ID mirrors ADSENSE_CONFIG.publisherId in config.js — keep both in sync if it ever changes. -->
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1474607999701705"
+     crossorigin="anonymous"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Bubblegum+Sans&display=swap" rel="stylesheet">
+<script>tailwind.config={darkMode:'class',theme:{extend:{fontFamily:{sans:['Inter','sans-serif'],funny:['Bubblegum Sans','cursive']},colors:{brand:{50:'#eff6ff',100:'#dbeafe',500:'#3b82f6',600:'#2563eb',700:'#1d4ed8'},kid:{purple:'#8B5CF6',yellow:'#FBBF24',orange:'#F59E0B',pink:'#EC4899',blue:'#3B82F6',green:'#10B981'}}}}}</script>
+<style>
+.screen{display:none}.screen.active{display:block}
+.option-card:active{transform:scale(.97)}
+@keyframes bounce-subtle{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+.animate-bounce-subtle{animation:bounce-subtle 2.2s infinite ease-in-out}
+</style>
+</head>
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100 min-h-screen antialiased font-sans">
+<div id="toastContainer" class="fixed bottom-24 left-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none"></div>
+<div id="loadingOverlay" class="fixed inset-0 z-[90] bg-black/50 backdrop-blur-sm flex items-center justify-center opacity-0 invisible transition-all">
+<div class="bg-white dark:bg-slate-800 rounded-2xl p-8 text-center max-w-xs shadow-2xl">
+<div class="w-10 h-10 border-4 border-slate-200 border-t-brand-600 rounded-full animate-spin mx-auto mb-4"></div>
+<p id="loadingText" class="font-semibold">Working…</p>
+<p id="loadingSubtext" class="text-sm text-slate-500 mt-1">Please wait</p>
+</div></div>
+
+<section id="screen-join" class="screen active min-h-screen flex flex-col items-center justify-center p-6">
+<div class="w-full max-w-md">
+<div class="text-center mb-10">
+<div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-600 text-white mb-4"><i class="ph-fill ph-camera text-3xl"></i></div>
+<h1 class="text-3xl font-bold">SnapQuiz</h1>
+<p class="text-slate-500 mt-2">Parent Hub & Kid Quiz · Supabase</p>
+</div>
+<div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-6 space-y-4">
+<div><label class="block text-sm font-semibold mb-1">Family Key</label>
+<input id="joinFamilyKey" type="text" placeholder="SNAP-XXXX" class="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 outline-none focus:ring-2 focus:ring-brand-500 uppercase font-mono"></div>
+<button id="btnJoinParent" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold py-3.5 rounded-xl">Enter as Parent</button>
+<button id="btnJoinChild" class="w-full border-2 border-brand-600 text-brand-600 font-semibold py-3.5 rounded-xl">Enter as Child</button>
+<div class="flex items-center gap-3"><div class="flex-1 h-px bg-slate-200"></div><span class="text-xs text-slate-400">or</span><div class="flex-1 h-px bg-slate-200"></div></div>
+<button id="btnCreateFamily" class="w-full border-2 border-dashed border-slate-300 font-semibold py-3.5 rounded-xl text-slate-600">Create New Family</button>
+</div>
+<p class="text-center text-xs text-slate-400 mt-4">Type your Family Key above, then Create New Family — or Enter as Parent if it exists</p>
+</div></section>
+
+<section id="screen-child-picker" class="screen min-h-screen flex flex-col items-center justify-center p-6">
+<div class="w-full max-w-md">
+<div class="text-center mb-8">
+<div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-600 text-white mb-4"><i class="ph-fill ph-users-three text-3xl"></i></div>
+<h1 class="text-2xl font-bold">Who's playing?</h1>
+<p class="text-slate-500 mt-1 text-sm">Tap your name to continue</p>
+</div>
+<div id="childPickerList" class="grid grid-cols-2 gap-3"></div>
+<button id="btnPickerBack" class="w-full mt-6 text-sm font-semibold text-slate-500">← Back</button>
+</div></section>
+
+<div id="modalChildPin" class="fixed inset-0 z-[80] bg-black/50 flex items-end sm:items-center justify-center p-4 opacity-0 invisible transition-all">
+<div class="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center">
+<div id="pinAvatar" class="w-16 h-16 mx-auto rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-bold text-2xl mb-3"></div>
+<h3 id="pinChildName" class="text-lg font-bold mb-1">Hi!</h3>
+<p class="text-sm text-slate-500 mb-4">Enter your PIN</p>
+<input id="pickerPin" type="password" inputmode="numeric" maxlength="6" placeholder="PIN" class="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 outline-none focus:ring-2 focus:ring-brand-500 text-center text-xl tracking-widest">
+<div class="flex gap-3 mt-5">
+<button id="btnCancelChildPin" class="flex-1 border border-slate-200 dark:border-slate-600 py-2.5 rounded-xl text-sm font-semibold">Cancel</button>
+<button id="btnConfirmChildPin" class="flex-1 bg-brand-600 text-white py-2.5 rounded-xl text-sm font-semibold">Enter</button>
+</div></div></div>
+
+<section id="screen-parent" class="screen min-h-screen">
+<header class="sticky top-0 z-30 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 h-16 flex items-center justify-between px-4">
+<div class="flex items-center gap-2"><div class="w-8 h-8 rounded-lg bg-brand-600 text-white flex items-center justify-center"><i class="ph-fill ph-camera"></i></div>
+<span class="font-bold">SnapQuiz <span class="text-slate-500 font-medium">Parent</span></span></div>
+<div class="flex items-center gap-2">
+<button id="btnTheme" class="p-2 text-slate-500"><i class="ph ph-moon text-xl" id="themeIcon"></i></button>
+<button id="btnLogout" class="text-xs text-slate-500 hover:text-red-500 px-2">Logout</button>
+<span class="text-xs font-mono text-slate-500" id="familyKeyDisplay">—</span>
+</div></header>
+<div class="flex">
+<aside class="hidden lg:flex w-56 flex-col border-r border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 h-[calc(100vh-64px)] sticky top-16 p-4 space-y-1">
+<button data-parent-tab="overview" class="parent-nav w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-brand-50 text-brand-700 font-semibold text-sm"><i class="ph-fill ph-house"></i> Overview</button>
+<button data-parent-tab="children" class="parent-nav w-full flex items-center gap-2 px-3 py-2 rounded-xl text-slate-600 text-sm"><i class="ph ph-users-three"></i> Children</button>
+<button data-parent-tab="subjects" class="parent-nav w-full flex items-center gap-2 px-3 py-2 rounded-xl text-slate-600 text-sm"><i class="ph ph-books"></i> Subjects</button>
+<button data-parent-tab="create" class="parent-nav w-full flex items-center gap-2 px-3 py-2 rounded-xl text-slate-600 text-sm"><i class="ph ph-camera"></i> Scan</button>
+<button data-parent-tab="history" class="parent-nav w-full flex items-center gap-2 px-3 py-2 rounded-xl text-slate-600 text-sm"><i class="ph ph-clock-counter-clockwise"></i> History</button>
+</aside>
+<main class="flex-1 p-4 md:p-8 max-w-5xl mx-auto w-full pb-24">
+<div id="parent-tab-overview" class="parent-tab">
+<h1 class="text-2xl font-bold mb-1">Dashboard</h1>
+<p class="text-slate-500 text-sm mb-6">Family <span id="overviewKey" class="font-mono font-semibold"></span></p>
+<section class="bg-brand-600 rounded-2xl p-6 text-white mb-6 flex flex-col md:flex-row justify-between gap-4">
+<div><p class="text-brand-100 text-sm">Completed</p><h2 class="text-3xl font-bold" id="totalQuizzesMastered">0 Quizzes</h2><p class="text-brand-100 text-xs mt-2" id="lastMastered">—</p></div>
+<div class="flex gap-2"><button id="btnQuickScan" class="bg-white text-slate-900 px-4 py-2 rounded-xl text-sm font-semibold">Quick Scan</button>
+<button id="btnAddChildHero" class="border border-white/30 px-4 py-2 rounded-xl text-sm font-semibold">Add Child</button></div>
+</section>
+<div class="flex items-center gap-2 mb-4">
+<span class="text-xs font-semibold text-slate-500 mr-1">Analytics for</span>
+<div id="analyticsChildFilter" class="flex items-center gap-2 overflow-x-auto"></div>
+</div>
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
+<section class="xl:col-span-2 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-4"><h3 class="font-semibold mb-2">Study Volume</h3><div id="studyChart"></div></section>
+<section class="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-4"><h3 class="font-semibold mb-3">Children</h3><div id="activeChildrenList" class="space-y-2"></div>
+<button id="btnAddChildSidebar" class="mt-3 w-full border border-dashed border-slate-300 rounded-xl text-sm text-slate-500 py-2">+ Add</button></section>
+</div>
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+<section class="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-4"><h3 class="font-semibold mb-2">Mastery</h3><div id="masteryRings"></div><div id="masteryLegend" class="grid grid-cols-3 gap-1 mt-2 text-center text-xs"></div></section>
+<section class="xl:col-span-2 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-4"><h3 class="font-semibold mb-3">Activity</h3><div id="activityFeed" class="space-y-3"></div></section>
+</div>
+<div id="adSlotOverview" class="hidden mt-6">
+<ins class="adsbygoogle block rounded-2xl overflow-hidden" style="display:block" data-ad-format="auto" data-full-width-responsive="true"></ins>
+</div>
+</div>
+
+<div id="parent-tab-children" class="parent-tab hidden">
+<div class="flex justify-between items-center mb-6"><div><h1 class="text-2xl font-bold">Children</h1><p class="text-sm text-slate-500">Optional PIN in Supabase</p></div>
+<button id="btnAddChild" class="bg-brand-600 text-white px-4 py-2 rounded-xl text-sm font-semibold">Add Child</button></div>
+<div id="childrenGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div></div>
+
+<div id="parent-tab-subjects" class="parent-tab hidden">
+<h1 class="text-2xl font-bold mb-1">Subjects</h1>
+<p class="text-sm text-slate-500 mb-6">Manage the subjects available when generating quizzes</p>
+<div class="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-6 max-w-xl space-y-4">
+<div>
+<label class="block text-sm font-semibold mb-1">Add a Subject</label>
+<div class="flex gap-2">
+<input id="newSubjectInput" type="text" placeholder="e.g. Geography" class="flex-1 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900">
+<button id="btnAddSubject" class="bg-brand-600 text-white px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap">Add</button>
+</div>
+</div>
+<div>
+<label class="block text-sm font-semibold mb-2">Current Subjects</label>
+<div id="subjectsList" class="flex flex-wrap gap-2"></div>
+</div>
+</div></div>
+
+<div id="parent-tab-create" class="parent-tab hidden">
+<h1 class="text-2xl font-bold mb-1">Scan & Generate</h1>
+<p class="text-sm text-slate-500 mb-6">Pushes quiz to child row in Supabase</p>
+<div class="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-6 max-w-xl space-y-4">
+<div><label class="block text-sm font-semibold mb-1">Child</label>
+<select id="createChildSelect" class="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900"><option value="">Select…</option></select></div>
+<div><label class="block text-sm font-semibold mb-1">Subject</label>
+<select id="createSubjectSelect" class="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900"><option value="General">General</option></select></div>
+<div><label class="block text-sm font-semibold mb-1">Images / PDF</label>
+<div id="imagePicker" class="grid grid-cols-3 gap-2"></div>
+<p class="text-xs text-slate-500 mt-1" id="imageHint">Add files (max 6)</p></div>
+<div class="grid grid-cols-2 gap-3">
+<div><label class="block text-sm font-semibold mb-1">Difficulty</label>
+<select id="ageGroup" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900">
+<option value="elementary">Elementary</option><option value="middle" selected>Middle</option>
+<option value="high">High</option><option value="college">College</option></select></div>
+<div><label class="block text-sm font-semibold mb-1">Questions</label>
+<select id="questionCount" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900">
+<option value="3">3</option><option value="5" selected>5</option><option value="8">8</option><option value="10">10</option></select></div>
+</div>
+<div><label class="block text-sm font-semibold mb-1">Gemini API Key</label>
+<input id="apiKey" type="password" placeholder="AIza…" class="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900" autocomplete="off">
+<p class="text-xs text-slate-500 mt-1">Auth key from AI Studio · stays on device</p>
+<div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2">
+<a id="linkGetApiKey" href="#" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline"><i class="ph-bold ph-key"></i> Get a free API key</a>
+<a id="linkApiKeyVideo" href="#" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-red-500 hover:underline"><i class="ph-fill ph-youtube-logo"></i> Watch: how to generate it</a>
+</div>
+</div>
+<button id="generateBtn" disabled class="w-full bg-brand-600 disabled:opacity-50 text-white font-semibold py-3.5 rounded-xl">Generate & Push to Child</button>
+</div></div>
+
+<div id="parent-tab-history" class="parent-tab hidden">
+<h1 class="text-2xl font-bold mb-1">History</h1>
+<p class="text-sm text-slate-500 mb-6">quiz_history table</p>
+<div id="historyList" class="space-y-2"></div>
+<div id="historyEmpty" class="text-center py-12 text-slate-400 hidden"><p>No history yet</p></div>
+<div id="adSlotHistory" class="hidden mt-6">
+<ins class="adsbygoogle block rounded-2xl overflow-hidden" style="display:block" data-ad-format="auto" data-full-width-responsive="true"></ins>
+</div>
+</div>
+</main></div>
+<nav class="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-around py-2 z-40">
+<button data-parent-tab="overview" class="parent-nav flex flex-col items-center text-brand-600 text-[10px] font-semibold"><i class="ph-fill ph-house text-xl"></i>Home</button>
+<button data-parent-tab="children" class="parent-nav flex flex-col items-center text-slate-400 text-[10px] font-semibold"><i class="ph ph-users-three text-xl"></i>Kids</button>
+<button data-parent-tab="subjects" class="parent-nav flex flex-col items-center text-slate-400 text-[10px] font-semibold"><i class="ph ph-books text-xl"></i>Subjects</button>
+<button data-parent-tab="create" class="parent-nav flex flex-col items-center text-slate-400 text-[10px] font-semibold"><i class="ph ph-camera text-xl"></i>Scan</button>
+<button data-parent-tab="history" class="parent-nav flex flex-col items-center text-slate-400 text-[10px] font-semibold"><i class="ph ph-clock-counter-clockwise text-xl"></i>History</button>
+</nav>
+</section>
+
+<section id="screen-quiz" class="screen min-h-screen bg-[#FDF2F8] dark:bg-slate-900">
+<header class="bg-white dark:bg-slate-800 px-5 pt-10 pb-6 rounded-b-[40px] shadow-sm sticky top-0 z-20">
+<div class="flex items-center justify-between mb-4">
+<button id="btnExitQuiz" class="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+<div class="flex items-center gap-2 bg-kid-yellow/20 px-4 py-2 rounded-full border border-kid-yellow/30">
+<i class="fa-solid fa-bolt text-kid-orange"></i><span class="font-bold text-kid-orange" id="quizPoints">0 pts</span></div>
+<div class="w-10 h-10 rounded-full border-2 border-kid-purple bg-kid-purple/20 flex items-center justify-center font-bold text-kid-purple" id="quizAvatarLetter">K</div>
+</div>
+<div class="px-2">
+<div class="flex justify-between mb-2"><span class="text-sm font-bold text-kid-purple" id="quizProgressLabel">Q 1/5</span>
+<span class="text-sm font-bold text-slate-400" id="quizProgressPct">0%</span></div>
+<div class="w-full h-4 bg-slate-100 rounded-full overflow-hidden"><div id="quizProgressBar" class="h-full bg-gradient-to-r from-kid-purple to-kid-pink rounded-full transition-all" style="width:0%"></div></div>
+</div></header>
+<main class="px-5 py-6 pb-36">
+<div class="flex items-end gap-3 mb-6">
+<div class="w-14 h-14 rounded-2xl bg-kid-purple/20 flex items-center justify-center text-2xl animate-bounce-subtle">👾</div>
+<div class="bg-white dark:bg-slate-800 p-4 rounded-2xl rounded-bl-none shadow-sm border border-pink-100 dark:border-slate-700 flex-1">
+<p id="quizQuestionText" class="text-lg font-bold">Loading…</p></div></div>
+<div id="quizOptions" class="grid gap-3"></div>
+</main>
+<footer class="fixed bottom-0 left-0 right-0 p-5 bg-white/90 dark:bg-slate-800/90 backdrop-blur border-t z-30">
+<button id="btnCheckAnswer" disabled class="w-full bg-kid-purple disabled:opacity-40 text-white font-bold py-4 rounded-[24px] shadow-[0_6px_0_#6D28D9] flex items-center justify-center gap-2 text-lg">Check Answer <i class="fa-solid fa-arrow-right"></i></button>
+</footer></section>
+
+<section id="screen-child-wait" class="screen min-h-screen flex flex-col items-center justify-center p-6 bg-[#FDF2F8] dark:bg-slate-900">
+<div class="text-center max-w-sm">
+<div class="text-6xl mb-4">📚</div>
+<h2 class="text-2xl font-bold mb-2" id="childWaitName">Hi!</h2>
+<p class="text-slate-500 mb-6">Waiting for a quiz…</p>
+<button id="btnRefreshQuiz" class="bg-kid-purple text-white font-bold px-6 py-3 rounded-2xl">Check for Quiz</button>
+<button id="btnChildLogout" class="block mx-auto mt-4 text-sm text-slate-500">Logout</button>
+</div></section>
+
+<div id="modalChild" class="fixed inset-0 z-[80] bg-black/50 flex items-end sm:items-center justify-center p-4 opacity-0 invisible transition-all">
+<div class="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+<h3 id="modalChildTitle" class="text-lg font-bold mb-4">Add Child</h3>
+<div class="space-y-3">
+<div><label class="block text-sm font-semibold mb-1">Name</label>
+<input id="childName" type="text" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900" placeholder="Liam"></div>
+<div><label class="block text-sm font-semibold mb-1">PIN (optional)</label>
+<input id="childPin" type="password" inputmode="numeric" maxlength="6" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900" placeholder="Blank = no PIN">
+<p class="text-xs text-slate-500 mt-1">Needs pin column: ALTER TABLE children ADD COLUMN pin text;</p></div>
+</div>
+<div class="flex gap-3 mt-5">
+<button id="btnCancelChild" class="flex-1 border border-slate-200 dark:border-slate-600 py-2.5 rounded-xl text-sm font-semibold">Cancel</button>
+<button id="btnSaveChild" class="flex-1 bg-brand-600 text-white py-2.5 rounded-xl text-sm font-semibold">Save</button>
+</div></div></div>
+
+<div id="modalFamily" class="fixed inset-0 z-[80] bg-black/50 flex items-end sm:items-center justify-center p-4 opacity-0 invisible transition-all">
+<div class="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+<h3 class="text-lg font-bold mb-2">Create Family</h3>
+<p class="text-sm text-slate-500 mb-4">Inserts into families table</p>
+<label class="block text-sm font-semibold mb-1">Subjects (comma-separated)</label>
+<input id="familySubjectsInput" type="text" value="Math, Science, History, General" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900">
+<div class="flex gap-3 mt-5">
+<button id="btnCancelFamily" class="flex-1 border border-slate-200 dark:border-slate-600 py-2.5 rounded-xl text-sm font-semibold">Cancel</button>
+<button id="btnConfirmFamily" class="flex-1 bg-brand-600 text-white py-2.5 rounded-xl text-sm font-semibold">Create</button>
+</div></div></div>
+
+<script>
+const SUPABASE_URL = 'https://swrctnzfblyfirrqszje.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_UcLXU1a9aGEZQ_ITIvIDJw_kwbn5uap';
+
+const STORAGE = { apiKey:'snapquiz_api_key', theme:'snapquiz_theme', session:'snapquiz_session', images:'snapquiz_images' };
+const FALLBACK_MODELS = ['gemini-3.6-flash','gemini-2.5-flash','gemini-2.5-pro','gemini-3.5-flash-lite'];
+let sb = null;
+const state = { familyKey:null, family:null, children:[], history:[], images:[], maxImages:6, apiKey:'', quiz:null, quizIndex:0, selectedOption:null, correct:0, currentChild:null, sessionRole:null, charts:{study:null,mastery:null}, editingChildId:null, analyticsChildFilter:'all', pickerChildren:[], pendingPickerChild:null };
+
+function genKey(){const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let s='SNAP-';for(let i=0;i<4;i++)s+=c[Math.floor(Math.random()*c.length)];return s;}
+function toast(msg,type='info',ms=3200){const el=document.createElement('div');const col={success:'border-emerald-500',error:'border-red-500',info:'border-brand-500'};el.className=`pointer-events-auto bg-white dark:bg-slate-800 border-l-4 ${col[type]||col.info} rounded-xl shadow-lg px-4 py-3 text-sm`;el.textContent=msg;document.getElementById('toastContainer').appendChild(el);setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),200);},ms);}
+function adsenseReady(){return typeof ADSENSE_CONFIG!=='undefined'&&ADSENSE_CONFIG.publisherId&&!ADSENSE_CONFIG.publisherId.includes('XXXX');}
+// Note: the adsbygoogle.js loader script itself is now a static tag in <head> (kept verbatim for
+// AdSense site-verification reliability). initAdsense() is kept only as a readiness no-op for future use.
+function initAdsense(){}
+
+function renderAdSlot(containerId,slotKey){
+  if(!adsenseReady())return;
+  const slotId=ADSENSE_CONFIG.adSlots?.[slotKey];
+  if(!slotId||slotId.includes('XXXX'))return; // this specific slot isn't configured yet
+  const container=document.getElementById(containerId);
+  const ins=container?.querySelector('ins.adsbygoogle');
+  if(!ins||ins.dataset.pushed==='1')return; // never push the same <ins> twice
+  ins.setAttribute('data-ad-client',ADSENSE_CONFIG.publisherId);
+  ins.setAttribute('data-ad-slot',slotId);
+  container.classList.remove('hidden');
+  try{(window.adsbygoogle=window.adsbygoogle||[]).push({});ins.dataset.pushed='1';}catch(e){console.warn('AdSense push failed',e);}
+}
+
+function loading(show,t='Working…',s='Please wait'){
+  const o=document.getElementById('loadingOverlay');
+  if(!o)return;
+  document.getElementById('loadingText').textContent=t;
+  document.getElementById('loadingSubtext').textContent=s;
+  if(show){
+    o.classList.remove('opacity-0','invisible');
+    o.style.display='flex';
+  }else{
+    o.classList.add('opacity-0','invisible');
+    o.style.display='none';
+  }
+}
+function screen(n){
+  document.querySelectorAll('.screen').forEach(s=>{
+    s.classList.remove('active');
+    s.style.display='none';
+  });
+  const el=document.getElementById('screen-'+n);
+  if(!el){console.error('Missing screen',n);return;}
+  el.classList.add('active');
+  el.style.display='block';
+  el.style.visibility='visible';
+  el.style.opacity='1';
+  const load=document.getElementById('loadingOverlay');
+  if(load){load.classList.add('opacity-0','invisible');load.style.display='none';}
+  window.scrollTo(0,0);
+}
+function openM(id){document.getElementById(id).classList.remove('opacity-0','invisible');}
+function closeM(id){document.getElementById(id).classList.add('opacity-0','invisible');}
+function db(){if(!SUPABASE_URL||SUPABASE_URL==='YOUR_SUPABASE_URL'||!SUPABASE_ANON_KEY||SUPABASE_ANON_KEY==='YOUR_SUPABASE_ANON_KEY')throw new Error('Fill SUPABASE_URL and SUPABASE_ANON_KEY at top of script');if(!sb)sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);return sb;}
+
+function initTheme(){const saved=localStorage.getItem(STORAGE.theme);const dark=saved?saved==='dark':matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',dark);document.getElementById('themeIcon').className=dark?'ph ph-sun text-xl':'ph ph-moon text-xl';}
+function toggleTheme(){const dark=!document.documentElement.classList.contains('dark');document.documentElement.classList.toggle('dark',dark);localStorage.setItem(STORAGE.theme,dark?'dark':'light');document.getElementById('themeIcon').className=dark?'ph ph-sun text-xl':'ph ph-moon text-xl';}
+
+async function createFamily(){
+  try{
+    db();
+    // Prefer key typed on login screen (e.g. KAMBLE-123); else generate SNAP-XXXX
+    let key=(document.getElementById('joinFamilyKey')?.value||'').trim().toUpperCase();
+    if(!key) key=genKey();
+    if(key.length<3) throw new Error('Family key too short');
+    const subjects=document.getElementById('familySubjectsInput').value.split(',').map(s=>s.trim()).filter(Boolean);
+    const {error}=await sb.from('families').insert({
+      family_key:key,
+      subjects:subjects.length?subjects:['General'],
+      status:'idle',
+      quiz_version:0
+    });
+    if(error){
+      // If key already exists, just enter as parent
+      const msg=String(error.message||error.code||'');
+      if(msg.includes('duplicate')||msg.includes('unique')||error.code==='23505'){
+        closeM('modalFamily');
+        toast('Family already exists — entering as parent','info');
+        await enterParent(key);
+        return;
+      }
+      throw error;
+    }
+    closeM('modalFamily');
+    document.getElementById('joinFamilyKey').value=key;
+    toast('Family created: '+key,'success',5000);
+    await enterParent(key);
+  }catch(e){
+    console.error(e);
+    toast(e.message||'Create failed','error');
+  }
+}
+
+async function enterParent(key){
+  try{
+    db();
+    loading(true,'Loading family…');
+    const {data:fam,error}=await sb.from('families').select('*').eq('family_key',key).maybeSingle();
+    if(error)throw error;
+    if(!fam)throw new Error('Family key not found');
+    state.familyKey=key;
+    state.family=fam;
+    state.sessionRole='parent';
+    localStorage.setItem(STORAGE.session,JSON.stringify({role:'parent',familyKey:key}));
+    document.getElementById('familyKeyDisplay').textContent=key;
+    document.getElementById('overviewKey').textContent=key;
+    // Show parent UI FIRST so chart errors cannot block navigation
+    loading(false);
+    screen('parent');
+    try{ await refreshParent(); }catch(re){ console.error('refreshParent',re); toast('Loaded family; some panels failed: '+(re.message||''),'info',4000); }
+    tab('overview');
+  }catch(e){
+    console.error(e);
+    toast(e.message||'Enter failed','error');
+  }finally{
+    loading(false);
+  }
+}
+
+async function refreshParent(){const key=state.familyKey;const [k,h,f]=await Promise.all([sb.from('children').select('*').eq('family_key',key).order('child_name'),sb.from('quiz_history').select('*').eq('family_key',key).order('completed_at',{ascending:false}).limit(50),sb.from('families').select('*').eq('family_key',key).maybeSingle()]);if(k.error)throw k.error;if(h.error)throw h.error;state.children=k.data||[];state.history=h.data||[];if(f.data)state.family=f.data;renderOverview();renderChildren();populateSelects();renderHistory();}
+
+async function joinChild(){
+  const key=document.getElementById('joinFamilyKey').value.trim().toUpperCase();
+  if(!key)return toast('Enter Family Key','error');
+  try{
+    db();loading(true,'Looking up…');
+    const {data:kids,error}=await sb.from('children').select('*').eq('family_key',key).order('child_name');
+    if(error)throw error;
+    if(!kids?.length)throw new Error('No children for this key');
+    state.familyKey=key;
+    state.pickerChildren=kids;
+    renderChildPicker();
+    screen('child-picker');
+  }catch(e){console.error(e);toast(e.message||'Join failed','error');}
+  finally{loading(false);}
+}
+
+function renderChildPicker(){
+  const list=document.getElementById('childPickerList');
+  const kids=state.pickerChildren||[];
+  list.innerHTML=kids.map(c=>`<button data-child-id="${c.id}" class="picker-card bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-2xl p-4 flex flex-col items-center gap-2 hover:border-brand-500 active:scale-95 transition-all">
+    <div class="w-14 h-14 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-bold text-xl">${(c.child_name||'?')[0].toUpperCase()}</div>
+    <span class="font-semibold text-sm">${c.child_name}</span>
+    ${c.pin?'<span class="text-[10px] text-slate-400 flex items-center gap-1"><i class="ph-fill ph-lock-key"></i> PIN</span>':''}
+  </button>`).join('');
+  list.querySelectorAll('.picker-card').forEach(btn=>{
+    btn.onclick=()=>selectPickerChild(btn.getAttribute('data-child-id'));
+  });
+}
+
+function selectPickerChild(childId){
+  const child=(state.pickerChildren||[]).find(c=>String(c.id)===String(childId));
+  if(!child)return;
+  if(child.pin){
+    state.pendingPickerChild=child;
+    document.getElementById('pinAvatar').textContent=(child.child_name||'?')[0].toUpperCase();
+    document.getElementById('pinChildName').textContent='Hi, '+child.child_name+'!';
+    document.getElementById('pickerPin').value='';
+    openM('modalChildPin');
+    document.getElementById('pickerPin').focus();
+  }else{
+    enterAsChild(child);
+  }
+}
+
+function confirmPickerPin(){
+  const child=state.pendingPickerChild;
+  if(!child)return;
+  const pin=document.getElementById('pickerPin').value.trim();
+  if(!pin||String(child.pin)!==pin){toast('Incorrect PIN','error');return;}
+  closeM('modalChildPin');
+  enterAsChild(child);
+}
+
+function enterAsChild(child){
+  state.currentChild=child;
+  state.sessionRole='child';
+  localStorage.setItem(STORAGE.session,JSON.stringify({role:'child',familyKey:state.familyKey,childId:child.id}));
+  document.getElementById('childWaitName').textContent='Hi, '+child.child_name+'!';
+  document.getElementById('quizAvatarLetter').textContent=child.child_name.charAt(0).toUpperCase();
+  if(child.status==='ready'&&child.current_quiz)startQuiz(child);
+  else{screen('child-wait');toast('No quiz ready yet','info');}
+}
+
+async function refreshChildQuiz(){if(!state.currentChild)return;try{db();loading(true,'Checking…');const {data,error}=await sb.from('children').select('*').eq('id',state.currentChild.id).maybeSingle();if(error)throw error;if(!data)throw new Error('Missing child');state.currentChild=data;if(data.status==='ready'&&data.current_quiz)startQuiz(data);else toast('Still waiting','info');}catch(e){toast(e.message||'Refresh failed','error');}finally{loading(false);}}
+
+function editChild(id){const c=state.children.find(x=>x.id===id);if(!c)return;state.editingChildId=id;document.getElementById('childName').value=c.child_name||'';document.getElementById('childPin').value=c.pin||'';document.getElementById('modalChildTitle').textContent='Edit '+c.child_name;document.getElementById('btnSaveChild').textContent='Update';openM('modalChild');}
+
+async function saveChild(){const name=document.getElementById('childName').value.trim();if(!name)return toast('Name required','error');const pin=document.getElementById('childPin').value.trim()||null;
+if(state.editingChildId){
+  const id=state.editingChildId;
+  try{db();loading(true,'Saving…');const row={child_name:name,pin:pin};let {error}=await sb.from('children').update(row).eq('id',id);if(error&&String(error.message).toLowerCase().includes('pin')){delete row.pin;({error}=await sb.from('children').update(row).eq('id',id));if(error)throw error;toast('Name updated (run ALTER for pin column)','info',5000);}else if(error)throw error;else toast('Child updated','success');state.editingChildId=null;closeM('modalChild');await refreshParent();}catch(e){console.error(e);toast(e.message||'Update failed','error');}finally{loading(false);}
+  return;
+}
+try{db();loading(true,'Saving…');const row={family_key:state.familyKey,child_name:name,status:'idle',quiz_version:0};if(pin)row.pin=pin;let {error}=await sb.from('children').insert(row);if(error&&String(error.message).toLowerCase().includes('pin')){delete row.pin;({error}=await sb.from('children').insert(row));if(error)throw error;toast('Child added (run ALTER for pin column)','info',5000);}else if(error)throw error;else toast('Child added','success');closeM('modalChild');await refreshParent();}catch(e){console.error(e);toast(e.message||'Save failed','error');}finally{loading(false);}}
+
+async function deleteChild(id){if(!confirm('Remove child?'))return;try{db();const {error}=await sb.from('children').delete().eq('id',id);if(error)throw error;toast('Removed','info');await refreshParent();}catch(e){toast(e.message||'Delete failed','error');}}
+
+function renderSubjects(){const list=document.getElementById('subjectsList');if(!list)return;const subs=state.family?.subjects||[];list.innerHTML=subs.length?subs.map(s=>`<span class="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-700 rounded-full pl-3 pr-1.5 py-1.5 text-sm"><span>${s}</span><button onclick="removeSubject('${s.replace(/'/g,"\\'")}')" class="w-5 h-5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 flex items-center justify-center text-slate-500 text-xs" title="Remove">×</button></span>`).join(''):'<p class="text-sm text-slate-400">No subjects yet — add one above</p>';}
+
+async function addSubject(){const input=document.getElementById('newSubjectInput');const val=input.value.trim();if(!val)return toast('Enter a subject name','error');const subs=state.family?.subjects||[];if(subs.some(s=>s.toLowerCase()===val.toLowerCase()))return toast('Subject already exists','error');const updated=[...subs,val];try{db();loading(true,'Saving…');const {error}=await sb.from('families').update({subjects:updated}).eq('family_key',state.familyKey);if(error)throw error;state.family=state.family||{};state.family.subjects=updated;input.value='';renderSubjects();populateSelects();toast('Subject added','success');}catch(e){console.error(e);toast(e.message||'Failed to add subject','error');}finally{loading(false);}}
+
+async function removeSubject(name){if(!confirm('Remove subject "'+name+'"?'))return;const subs=(state.family?.subjects||[]).filter(s=>s!==name);try{db();loading(true,'Saving…');const {error}=await sb.from('families').update({subjects:subs}).eq('family_key',state.familyKey);if(error)throw error;state.family.subjects=subs;renderSubjects();populateSelects();toast('Subject removed','info');}catch(e){console.error(e);toast(e.message||'Failed to remove subject','error');}finally{loading(false);}}
+
+function renderChildren(){const g=document.getElementById('childrenGrid');if(!state.children.length){g.innerHTML='<div class="col-span-full text-center py-12 text-slate-400"><p>No children yet</p></div>';return;}g.innerHTML=state.children.map(c=>`<div class="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-4 flex justify-between"><div class="flex gap-3 items-center"><div class="w-10 h-10 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-bold">${(c.child_name||'?')[0]}</div><div><p class="font-semibold">${c.child_name}</p><p class="text-xs text-slate-500">${c.pin?'PIN set':'No PIN'} · ${c.status}${c.quiz_subject?' · '+c.quiz_subject:''}</p></div></div><div class="flex items-center gap-1"><button onclick="editChild('${c.id}')" class="text-slate-500 hover:text-brand-600 p-2" title="Edit / Change PIN"><i class="ph ph-pencil-simple"></i></button><button onclick="deleteChild('${c.id}')" class="text-red-500 p-2" title="Remove"><i class="ph ph-trash"></i></button></div></div>`).join('');}
+
+function tab(t){document.querySelectorAll('.parent-tab').forEach(x=>x.classList.add('hidden'));document.getElementById('parent-tab-'+t).classList.remove('hidden');document.querySelectorAll('.parent-nav').forEach(b=>{const a=b.dataset.parentTab===t;b.classList.toggle('bg-brand-50',a);b.classList.toggle('text-brand-700',a);b.classList.toggle('font-semibold',a);b.classList.toggle('text-slate-600',!a);b.classList.toggle('text-slate-400',!a);});if(t==='create')renderPicker();if(t==='overview'){renderOverview();renderAdSlot('adSlotOverview','overview');}if(t==='subjects')renderSubjects();if(t==='history')renderAdSlot('adSlotHistory','history');}
+
+function renderAnalyticsFilter(){const el=document.getElementById('analyticsChildFilter');if(!el)return;const names=['All',...state.children.map(c=>c.child_name)];el.innerHTML=names.map(n=>{const val=n==='All'?'all':n;const active=(state.analyticsChildFilter||'all')===val;return `<button data-filter="${val}" class="analytics-filter-btn shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${active?'bg-brand-600 text-white border-brand-600':'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600'}">${n}</button>`;}).join('');
+el.querySelectorAll('.analytics-filter-btn').forEach(b=>b.addEventListener('click',()=>{state.analyticsChildFilter=b.dataset.filter;renderOverview();}));}
+
+function renderOverview(){renderAnalyticsFilter();const filter=state.analyticsChildFilter||'all';const filteredHistory=filter==='all'?state.history:state.history.filter(h=>h.child_name===filter);
+document.getElementById('totalQuizzesMastered').textContent=filteredHistory.length+' Quizzes';
+if(filteredHistory[0]){const h=filteredHistory[0];document.getElementById('lastMastered').textContent=`Last: ${h.child_name} · ${h.subject} · ${h.percentage}%`;}else{document.getElementById('lastMastered').textContent='No quizzes completed yet';}
+document.getElementById('activeChildrenList').innerHTML=state.children.map(c=>`<div class="flex items-center gap-2 p-2 rounded-xl border border-slate-100 dark:border-slate-700"><div class="w-8 h-8 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-sm font-semibold">${(c.child_name||'?')[0]}</div><div class="flex-1 min-w-0"><p class="text-sm font-semibold truncate">${c.child_name}</p><p class="text-xs text-slate-500">${c.status}</p></div><span class="text-xs font-semibold ${c.status==='ready'?'text-emerald-600':'text-slate-500'}">${c.status}</span></div>`).join('')||'<p class="text-sm text-slate-400">No children</p>';
+document.getElementById('activityFeed').innerHTML=filteredHistory.length?filteredHistory.slice(0,6).map(h=>`<div class="flex gap-2"><div class="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center"><i class="ph-bold ph-check-circle"></i></div><div><p class="text-sm"><b>${h.child_name}</b> ${h.score}/${h.total} on <b>${h.subject}</b></p><p class="text-xs text-slate-500">${new Date(h.completed_at).toLocaleString()}</p></div></div>`).join(''):'<p class="text-sm text-slate-400">No activity yet</p>';
+renderCharts(filteredHistory);}
+
+function renderCharts(filteredHistory){filteredHistory=filteredHistory||state.history;try{const se=document.getElementById('studyChart'),me=document.getElementById('masteryRings');if(!se||!me)return;if(state.charts.study){state.charts.study.destroy();state.charts.study=null;}if(state.charts.mastery){state.charts.mastery.destroy();state.charts.mastery=null;}
+// Study Volume: quizzes actually completed per day over the last 7 days, from quiz_history
+const today=new Date();const dayLabels=[],dayCounts=[];
+for(let i=6;i>=0;i--){const d=new Date(today);d.setDate(today.getDate()-i);dayLabels.push(d.toLocaleDateString('en-US',{weekday:'short'}));
+const count=filteredHistory.filter(h=>{const hd=new Date(h.completed_at);return hd.toDateString()===d.toDateString();}).length;dayCounts.push(count);}
+state.charts.study=new ApexCharts(se,{chart:{type:'area',height:200,toolbar:{show:false},fontFamily:'Inter'},series:[{name:'Quizzes',data:dayCounts}],colors:['#2563eb'],stroke:{curve:'smooth',width:2},fill:{type:'gradient',gradient:{opacityFrom:.25,opacityTo:.02}},dataLabels:{enabled:false},grid:{borderColor:'#f1f5f9'},xaxis:{categories:dayLabels,labels:{style:{colors:'#94a3b8',fontSize:'11px'}}},yaxis:{min:0,forceNiceScale:true,labels:{style:{colors:'#94a3b8',fontSize:'11px'},formatter:v=>Math.round(v)}},legend:{show:false}});state.charts.study.render();
+// Mastery: real average score % per subject, computed from completed quizzes
+const subjMap={};filteredHistory.forEach(h=>{const s=h.subject||'General';if(!subjMap[s])subjMap[s]={sum:0,n:0};subjMap[s].sum+=(h.percentage||0);subjMap[s].n++;});
+let subs=Object.keys(subjMap),vals;
+if(subs.length){subs=subs.slice(0,3);vals=subs.map(s=>Math.round(subjMap[s].sum/subjMap[s].n));}
+else{subs=(state.family?.subjects||['General']).slice(0,3);vals=subs.map(()=>0);}
+state.charts.mastery=new ApexCharts(me,{chart:{type:'radialBar',height:180,fontFamily:'Inter'},series:vals,labels:subs,colors:['#2563eb','#14b8a6','#10b981'],plotOptions:{radialBar:{hollow:{size:'30%'},track:{background:'#f1f5f9'},dataLabels:{name:{show:true,fontSize:'10px',color:'#64748b',offsetY:16},value:{offsetY:-4,fontSize:'16px',fontWeight:700,formatter:()=>vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length)+'%':'0%'}}}},stroke:{lineCap:'round'},legend:{show:false}});state.charts.mastery.render();
+document.getElementById('masteryLegend').innerHTML=subs.length?subs.map((s,i)=>`<div><p class="text-slate-500">${s}</p><p class="font-bold">${vals[i]}%</p></div>`).join(''):'<p class="col-span-3 text-slate-400">No data yet</p>';}catch(e){console.warn('charts skipped',e);}}
+
+function populateSelects(){document.getElementById('createChildSelect').innerHTML='<option value="">Select…</option>'+state.children.map(c=>`<option value="${c.id}">${c.child_name}</option>`).join('');
+const subs=state.family?.subjects||['General'];document.getElementById('createSubjectSelect').innerHTML=subs.map(s=>`<option value="${s}">${s}</option>`).join('');}
+
+function renderHistory(){const list=document.getElementById('historyList'),empty=document.getElementById('historyEmpty');if(!state.history.length){list.innerHTML='';empty.classList.remove('hidden');return;}empty.classList.add('hidden');
+list.innerHTML=state.history.map(h=>`<div class="flex justify-between bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-3"><div><p class="font-semibold text-sm">${h.child_name} · ${h.subject}</p><p class="text-xs text-slate-500">${new Date(h.completed_at).toLocaleString()}</p></div><div class="text-right"><p class="font-bold text-brand-600">${h.score}/${h.total}</p><p class="text-xs text-slate-500">${h.percentage}%</p></div></div>`).join('');}
+
+function loadImages(){try{state.images=JSON.parse(localStorage.getItem(STORAGE.images)||'[]');}catch{state.images=[];}}
+function saveImages(){try{localStorage.setItem(STORAGE.images,JSON.stringify(state.images));}catch{}}
+function renderPicker(){const p=document.getElementById('imagePicker');if(!p)return;let h=state.images.map((img,i)=>`<div class="relative aspect-square rounded-xl overflow-hidden border border-slate-200 group">${img.mimeType==='application/pdf'?`<div class="w-full h-full bg-red-50 flex flex-col items-center justify-center text-red-600 text-xs"><i class="ph-fill ph-file-pdf text-2xl"></i>PDF</div>`:`<img src="${img.previewUrl}" class="w-full h-full object-cover">`}<button data-r="${i}" class="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 text-xs">×</button></div>`).join('');
+if(state.images.length<state.maxImages)h+=`<label class="aspect-square rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer text-slate-400 text-xs"><i class="ph-bold ph-plus text-xl"></i>Add<input type="file" accept="image/*,.pdf,application/pdf" multiple class="hidden" id="fileInput"></label>`;
+p.innerHTML=h;document.getElementById('fileInput')?.addEventListener('change',handleFiles);p.querySelectorAll('[data-r]').forEach(b=>b.addEventListener('click',()=>{state.images.splice(+b.dataset.r,1);saveImages();renderPicker();updGen();}));
+document.getElementById('imageHint').textContent=state.images.length?state.images.length+'/'+state.maxImages+' files':'Add files (max 6)';updGen();}
+function handleFiles(e){const files=[...e.target.files].slice(0,state.maxImages-state.images.length);let d=0;files.forEach(f=>{const r=new FileReader();r.onload=ev=>{const full=ev.target.result;const mime=f.type||(f.name.endsWith('.pdf')?'application/pdf':'image/jpeg');state.images.push({mimeType:mime,base64:full.split(',')[1],previewUrl:full,name:f.name});d++;if(d===files.length){saveImages();renderPicker();}};r.readAsDataURL(f);});e.target.value='';}
+function updGen(){const b=document.getElementById('generateBtn');if(!b)return;b.disabled=!state.images.length||!state.apiKey.trim()||!document.getElementById('createChildSelect')?.value||!document.getElementById('createSubjectSelect')?.value;}
+
+async function generateQuiz(){const childId=document.getElementById('createChildSelect').value;const subject=document.getElementById('createSubjectSelect').value;const difficulty=document.getElementById('ageGroup').value;const n=document.getElementById('questionCount').value;if(!childId||!subject)return toast('Select child + subject','error');if(!state.images.length)return toast('Add files','error');if(!state.apiKey.trim())return toast('Enter Gemini key','error');const child=state.children.find(c=>c.id===childId);loading(true,'Generating…','Gemini + Supabase');
+const prompt=`Examine all images/docs. Generate a ${n}-question MCQ quiz about "${subject}" for ${difficulty}-level student ${child?.child_name||'Student'}. Return ONLY JSON: {"quiz":[{"question":"...","options":["A","B","C","D"],"answerIndex":0,"explanation":"..."}]}`;
+const parts=[{text:prompt}];state.images.forEach(img=>{if(img.mimeType==='application/pdf')parts.push({text:`[PDF ${img.name||'doc'} about ${subject}]`});else parts.push({inline_data:{mime_type:img.mimeType,data:img.base64}});});
+try{const raw=await callGemini({contents:[{parts}],generationConfig:{response_mime_type:'application/json'}});const data=JSON.parse(raw.replace(/```json|```/g,'').trim());if(!data.quiz?.length)throw new Error('Empty quiz');db();const ver=(child?.quiz_version||0)+1;const {error}=await sb.from('children').update({current_quiz:data.quiz,quiz_subject:subject,quiz_difficulty:difficulty,quiz_version:ver,status:'ready',results:null,updated_at:new Date().toISOString()}).eq('id',childId);if(error)throw error;toast(`Quiz pushed to ${child?.child_name} (v${ver})`,'success',4000);await refreshParent();tab('overview');}catch(e){console.error(e);toast(e.message||'Failed','error');}finally{loading(false);}}
+
+async function callGemini(payload){let last=null;for(const model of FALLBACK_MODELS){try{loading(true,'Trying '+model+'…');const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':state.apiKey},body:JSON.stringify(payload)});const result=await res.json();if(res.ok&&result.candidates?.[0]?.content?.parts?.[0]?.text)return result.candidates[0].content.parts[0].text;last=new Error(result?.error?.message||('HTTP '+res.status));}catch(e){last=e;}}throw last||new Error('All models failed');}
+
+function startQuiz(child){let quiz=child.current_quiz;if(typeof quiz==='string'){try{quiz=JSON.parse(quiz);}catch{quiz=null;}}if(!Array.isArray(quiz)||!quiz.length){toast('Invalid quiz','error');screen('child-wait');return;}state.currentChild=child;state.quiz=quiz;state.quizIndex=0;state.correct=0;state.selectedOption=null;document.getElementById('quizPoints').textContent='0 pts';document.getElementById('quizAvatarLetter').textContent=(child.child_name||'K')[0].toUpperCase();screen('quiz');renderQ();}
+
+function renderQ(){const q=state.quiz[state.quizIndex];if(!q)return finishQuiz();const total=state.quiz.length,pct=Math.round(state.quizIndex/total*100);document.getElementById('quizProgressLabel').textContent=`Q ${state.quizIndex+1}/${total}`;document.getElementById('quizProgressPct').textContent=pct+'%';document.getElementById('quizProgressBar').style.width=pct+'%';document.getElementById('quizQuestionText').textContent=q.question;document.getElementById('btnCheckAnswer').disabled=true;state.selectedOption=null;
+document.getElementById('quizOptions').innerHTML=q.options.map((opt,i)=>`<button class="option-card bg-white dark:bg-slate-800 p-4 rounded-[22px] border-2 border-slate-100 dark:border-slate-600 hover:border-kid-blue text-left flex items-center gap-3" data-o="${i}"><div class="w-10 h-10 rounded-2xl bg-kid-blue/10 flex items-center justify-center font-funny text-xl text-kid-blue">${String.fromCharCode(65+i)}</div><span class="text-lg font-bold">${opt}</span></button>`).join('');
+document.querySelectorAll('.option-card').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.option-card').forEach(b=>b.classList.remove('border-kid-blue','bg-kid-blue/5'));btn.classList.add('border-kid-blue','bg-kid-blue/5');state.selectedOption=+btn.dataset.o;document.getElementById('btnCheckAnswer').disabled=false;}));}
+
+function checkAnswer(){if(state.selectedOption===null)return;const q=state.quiz[state.quizIndex];if(state.selectedOption===q.answerIndex){state.correct++;document.getElementById('quizPoints').textContent=(state.correct*30)+' pts';toast('Correct! +30','success',1200);}else toast('Keep going!','info',1200);state.quizIndex++;setTimeout(()=>{if(state.quizIndex>=state.quiz.length)finishQuiz();else renderQ();},700);}
+
+async function finishQuiz(){const child=state.currentChild;const total=state.quiz.length,score=state.correct,percentage=Math.round(score/total*100);try{db();loading(true,'Saving…');await sb.from('children').update({status:'idle',results:{score,total,percentage,completed_at:new Date().toISOString()},updated_at:new Date().toISOString()}).eq('id',child.id);await sb.from('quiz_history').insert({family_key:state.familyKey,child_name:child.child_name,subject:child.quiz_subject||'General',difficulty:child.quiz_difficulty||'middle',score,total,percentage});toast(`Done! ${score}/${total} (${percentage}%)`,'success',4000);}catch(e){console.error(e);toast('Save failed: '+(e.message||''),'error');}finally{loading(false);screen('child-wait');document.getElementById('childWaitName').textContent='Nice work, '+child.child_name+'!';}}
+
+function logout(){state.familyKey=null;state.family=null;state.children=[];state.currentChild=null;state.sessionRole=null;localStorage.removeItem(STORAGE.session);screen('join');}
+
+function init(){initTheme();loadImages();initAdsense();state.apiKey=localStorage.getItem(STORAGE.apiKey)||'';document.getElementById('apiKey').value=state.apiKey;
+if(typeof APP_LINKS!=='undefined'){const gk=document.getElementById('linkGetApiKey'),gv=document.getElementById('linkApiKeyVideo');if(gk)gk.href=APP_LINKS.geminiApiKeyUrl;if(gv)gv.href=APP_LINKS.geminiApiKeyVideoUrl;}
+try{const sess=JSON.parse(localStorage.getItem(STORAGE.session)||'null');if(sess?.role==='parent'&&sess.familyKey)enterParent(sess.familyKey);else if(sess?.role==='child'&&sess.childId){(async()=>{try{db();const {data}=await sb.from('children').select('*').eq('id',sess.childId).maybeSingle();if(data){state.familyKey=sess.familyKey;state.currentChild=data;state.sessionRole='child';document.getElementById('childWaitName').textContent='Hi, '+data.child_name+'!';if(data.status==='ready'&&data.current_quiz)startQuiz(data);else screen('child-wait');}}catch{}})();}}catch{}
+document.getElementById('btnCreateFamily').onclick=()=>openM('modalFamily');
+document.getElementById('btnCancelFamily').onclick=()=>closeM('modalFamily');
+document.getElementById('btnConfirmFamily').onclick=createFamily;
+document.getElementById('btnJoinParent').onclick=()=>{const k=document.getElementById('joinFamilyKey').value.trim().toUpperCase();if(!k)return toast('Enter Family Key','error');enterParent(k);};
+document.getElementById('btnJoinChild').onclick=joinChild;
+document.getElementById('btnPickerBack').onclick=()=>{state.pickerChildren=[];screen('join');};
+document.getElementById('btnCancelChildPin').onclick=()=>{state.pendingPickerChild=null;closeM('modalChildPin');};
+document.getElementById('btnConfirmChildPin').onclick=confirmPickerPin;
+document.getElementById('pickerPin').addEventListener('keydown',e=>{if(e.key==='Enter')confirmPickerPin();});
+document.getElementById('btnTheme').onclick=toggleTheme;
+document.getElementById('btnLogout').onclick=logout;
+document.getElementById('btnChildLogout').onclick=logout;
+document.getElementById('btnRefreshQuiz').onclick=refreshChildQuiz;
+document.getElementById('btnAddChild').onclick=()=>{state.editingChildId=null;document.getElementById('modalChildTitle').textContent='Add Child';document.getElementById('btnSaveChild').textContent='Save';document.getElementById('childName').value='';document.getElementById('childPin').value='';openM('modalChild');};
+document.getElementById('btnAddChildHero').onclick=()=>document.getElementById('btnAddChild').click();
+document.getElementById('btnAddChildSidebar').onclick=()=>document.getElementById('btnAddChild').click();
+document.getElementById('btnCancelChild').onclick=()=>{state.editingChildId=null;closeM('modalChild');};
+document.getElementById('btnSaveChild').onclick=saveChild;
+document.getElementById('btnAddSubject').onclick=addSubject;
+document.getElementById('newSubjectInput').addEventListener('keydown',e=>{if(e.key==='Enter')addSubject();});
+document.getElementById('btnQuickScan').onclick=()=>tab('create');
+document.querySelectorAll('.parent-nav').forEach(b=>b.addEventListener('click',()=>tab(b.dataset.parentTab)));
+document.getElementById('apiKey').oninput=e=>{state.apiKey=e.target.value.trim();localStorage.setItem(STORAGE.apiKey,state.apiKey);updGen();};
+document.getElementById('generateBtn').onclick=generateQuiz;
+document.getElementById('createChildSelect').onchange=updGen;
+document.getElementById('createSubjectSelect').onchange=updGen;
+document.getElementById('btnCheckAnswer').onclick=checkAnswer;
+document.getElementById('btnExitQuiz').onclick=()=>{if(confirm('Leave quiz?'))screen('child-wait');};
+window.deleteChild=deleteChild;window.editChild=editChild;window.removeSubject=removeSubject;}
+document.addEventListener('DOMContentLoaded',init);
+</script>
+</body>
+</html>
